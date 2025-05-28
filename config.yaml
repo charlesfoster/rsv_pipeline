@@ -1,0 +1,43 @@
+# config.yaml
+
+#########
+# FREQUENTLY NEEDS TO BE CHANGED
+#########
+
+## input/output
+reads_dir:  "reads"
+outdir:     "results"
+suffix1: "_L001_R1_001.fastq.gz"
+suffix2: "_L001_R2_001.fastq.gz"
+remove_sample_index: True
+keep_trimmed_reads: False
+
+#########
+# SOMETIMES NEEDS TO BE CHANGED
+#########
+
+## analysis parameters
+min_depth:  10
+consensus_threshold : 0.5
+snp_threshold : 0.1
+mixed_threshold : 0.1
+
+#########
+# SHOULD NOT NEED TO BE CHANGED
+#########
+
+## reference and database files
+refs:
+  RSVA:  "data/RSVA_ref.fasta"
+  RSVB:  "data/RSVB_ref.fasta"
+primers_bed: 
+  RSVA:  "data/RSVA.primer.bed"
+  RSVB:  "data/RSVB.primer.bed"
+syldb:   "data/rsv_database.syldb"
+nextclade_dataset:
+  RSVA: "data/rsv_a"
+  RSVB: "data/rsv_b"
+nextclade_name:
+  RSVA: "rsv_a"
+  RSVB: "rsv_b"
+
