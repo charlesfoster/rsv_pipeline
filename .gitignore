@@ -1,0 +1,15 @@
+# Ignore directories with generated results and temporary data
+/results/
+/sandbox/
+
+# Ignore Nextclade/reference downloads and intermediate reference indexes
+/data/artic_references/
+/data/rsv_a/
+/data/rsv_b/
+
+# Ignore snakemake cache and logs
+/.snakemake/
+
+# Ignore macOS filesystem metadata
+*.DS_Store
+

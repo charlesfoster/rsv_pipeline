@@ -40,12 +40,49 @@ def _get_cores_from_argv():
                     pass
     return os.cpu_count()
 
+def all_inputs(wildcards):
+    # get the mapping file from the checkpoint
+    map_file = checkpoints.parse_profile.get().output[0]
+    # read it
+    with open(map_file) as fh:
+        samples = [line.split("\t",1)[0] for line in fh]
+    # build per-sample consensus + nextclade targets
+    consensus = [
+        os.path.join(OUTDIR, s, f"{s}.consensus.fasta")
+        for s in samples
+    ]
+    consensus_ambiguities = [
+        os.path.join(OUTDIR, s, f"{s}.IUPAC_consensus.fasta")
+        for s in samples
+    ]
+    reports   = [
+        os.path.join(OUTDIR, s, f"{s}.nextclade_report.tsv")
+        for s in samples
+    ]
+    # and your final QC outputs
+    others = [
+        os.path.join(OUTDIR, "overall_samples_qc_summary.csv"),
+        os.path.join(OUTDIR, "all_nextclade_merged.tsv")
+    ]
+    # plus the global nextclade‐ready flags
+    flags = [
+        os.path.join(OUTDIR, f".nextclade_{st}_ready.txt")
+        for st in REFS.keys()
+    ]
+    return [map_file] + flags + consensus + consensus_ambiguities + reports + others
+
+
+def get_mapped_samples():
+    import pandas as pd
+    df = pd.read_csv(MAP, sep="\t", header=None, names=["sample","subtype"])
+    return df["sample"].tolist()
+
 ###############################################################################
 # PARAMS
 ###############################################################################
 
 THREADS           = _get_cores_from_argv()
-READS_DIR         = config["reads_dir"]
+# READS_DIR         = config["reads_dir"]
 OUTDIR            = config["outdir"]
 PRIMERS           = config["primers_bed"]
 MIN_DEPTH         = config["min_depth"]
@@ -62,7 +99,7 @@ MAP = os.path.join(OUTDIR, "selected_sample_subtypes.tsv")
 ###############################################################################
 # DISCOVER SAMPLES
 ###############################################################################
-SAMPLES = derive_samples(READS_DIR, SUFFIX1, config["remove_sample_index"])
+# SAMPLES = derive_samples(READS_DIR, SUFFIX1, config["remove_sample_index"])
 
 REMOVE_INDEX = config["remove_sample_index"]       # True / False
 
@@ -71,23 +108,15 @@ REMOVE_INDEX = config["remove_sample_index"]       # True / False
 ###############################################################################
 rule all:
     input:
-        MAP,
-        expand(os.path.join(OUTDIR, ".nextclade_{subtype}_ready.txt"),
-               subtype=["RSVA", "RSVB"]),
-        expand(os.path.join(OUTDIR, "{sample}", "{sample}.consensus.fasta"),
-               sample=SAMPLES),
-        expand(os.path.join(OUTDIR, "{sample}", "{sample}.nextclade_report.tsv"),
-               sample=SAMPLES),
-        csv = os.path.join(OUTDIR, "overall_samples_qc_summary.csv"),
-        nextclade = os.path.join(OUTDIR, "all_nextclade_merged.tsv")
-
+        all_inputs
 ###############################################################################
 # RULE: sylph_profile (one global job)
 ###############################################################################
 rule sylph_profile:
     params:
-        suffix1 = SUFFIX1,
-        suffix2 = SUFFIX2
+        suffix1 = config["suffix1"],
+        suffix2 = config["suffix2"],
+        READS_DIR = config['reads_dir']
     output:
         custom=os.path.join(OUTDIR, "sylph_subtype_profiling.tsv")
     threads: THREADS
@@ -95,16 +124,16 @@ rule sylph_profile:
         """
         mkdir -p {OUTDIR}
         sylph profile {SYLDB} -c 100 \
-            -1 {READS_DIR}/*{params.suffix1} \
-            -2 {READS_DIR}/*{params.suffix2} \
+            -1 {params.READS_DIR}/*{params.suffix1} \
+            -2 {params.READS_DIR}/*{params.suffix2} \
             -t {threads} \
-        > {output.custom}
+        > {output.custom} 2> /dev/null
         """
 
 ###############################################################################
 # RULE: parse_profile -> selected_sample_subtypes
 ###############################################################################
-rule parse_profile:
+checkpoint parse_profile:
     input:
         profile = rules.sylph_profile.output.custom
     output:
@@ -113,28 +142,19 @@ rule parse_profile:
         import os, re, pandas as pd
 
         remove_index = config["remove_sample_index"]
-        tail = SUFFIX1                       # literal suffix e.g. '_S*_L001_R1_001.fastq.gz'
+        tail = SUFFIX1  # literal suffix
 
-        # regex pattern matching the part to strip
-        if remove_index:
-            # strip  _S<number> + tail
-            patt = re.compile(r"_S\d+" + re.escape(tail) + r"$")
-        else:
-            # strip only the tail
-            patt = re.compile(re.escape(tail) + r"$")
+        # choose correct regex
+        patt = re.compile(
+            (r"_S\d+" if remove_index else "") + re.escape(tail) + r"$"
+        )
 
-        # ---------- read sylph output ---------------------------------------
         df = pd.read_csv(input.profile, sep="\t", comment="#")
-
-        # derive sample column using the same trimming logic
         df["sample"] = df["Sample_file"].apply(
             lambda p: patt.sub("", os.path.basename(p))
         )
-
-        # pick the row with highest abundance per sample
         idx = df.groupby("sample")["Taxonomic_abundance"].idxmax()
         mapping = df.loc[idx, ["sample", "Contig_name"]]
-
         os.makedirs(os.path.dirname(output[0]), exist_ok=True)
         mapping.to_csv(output[0], sep="\t", header=False, index=False)
 
@@ -166,14 +186,14 @@ rule fastp:
     input:
         MAP,
         r1 = lambda wc: glob.glob(os.path.join(
-                 READS_DIR,
-                 f"{wc.sample}_S*{SUFFIX1}" if REMOVE_INDEX
-                 else f"{wc.sample}{SUFFIX1}"
+                 config["reads_dir"],
+                 f"{wc.sample}_S*{config["suffix1"]}" if REMOVE_INDEX
+                 else f"{wc.sample}{config["suffix1"]}"
              ))[0],
         r2 = lambda wc: glob.glob(os.path.join(
-                 READS_DIR,
-                 f"{wc.sample}_S*{SUFFIX2}" if REMOVE_INDEX
-                 else f"{wc.sample}{SUFFIX2}"
+                 config["reads_dir"],
+                 f"{wc.sample}_S*{config["suffix2"]}" if REMOVE_INDEX
+                 else f"{wc.sample}{config["suffix2"]}"
              ))[0]
     output:
         r1   = temp(os.path.join(OUTDIR, "{sample}", "{sample}_R1.trimmed.fastq.gz")) \
@@ -194,17 +214,19 @@ rule fastp:
               --detect_adapter_for_pe \
               --cut_front \
               --cut_tail \
-              --trim_poly_x \
               --cut_mean_quality 20 \
               --correction \
               --length_required 50 \
               -h {output.html} \
-              -j {output.json}
+              -j {output.json} 2> /dev/null
         """
 
 rule index_refs:
     input:
-        refs=list(REFS.values())
+        ready = expand(os.path.join(OUTDIR, ".nextclade_{subtype}_ready.txt"),
+                subtype=REFS.keys()),
+    params:
+        refs=list(REFS.values()),
     output:
         idx=[
             f"{ref}{ext}"
@@ -214,10 +236,10 @@ rule index_refs:
     threads: 1
     shell:
         """
-        for REF in {input.refs}; do
+        for REF in {params.refs}; do
             # index only if missing – avoids pointless re-runs
-            [ -f "$REF.bwt" ] || bwa index "$REF"
-            [ -f "$REF.fai" ] || samtools faidx "$REF"
+            [ -f "$REF.bwt" ] || bwa index "$REF" 2> /dev/null
+            [ -f "$REF.fai" ] || samtools faidx "$REF" 2> /dev/null
         done
         """
 
@@ -234,7 +256,7 @@ rule bwa_mem:
     shell:
         """
         REF=$(cat {input.ref_txt})
-        bwa mem -t {threads} "$REF" {input.r1} {input.r2} \
+        bwa mem -t {threads} "$REF" {input.r1} {input.r2} 2> /dev/null \
         | samtools sort -@ {threads} | \
         samtools view -@ {threads} -F 4 --write-index -o {output.bam} -
         """
@@ -271,8 +293,8 @@ rule clip:
         """
         BED=$(cat {input.bed_txt})
         samtools ampliconclip -b $BED -@ {threads} \
-          -o - {input.bam} 2> {output.log} \
-        | samtools sort -@ {threads} -o {output.bam} -
+        --strand --both-ends  -o - {input.bam} 2> {output.log} \
+        | samtools sort -@ {threads} -o {output.bam} - 2> /dev/null
         samtools index {output.bam}
         """
 
@@ -287,7 +309,7 @@ rule indelqual:
     shell:
         """
         REF=$(cat {input.ref_txt})
-        lofreq indelqual --dindel -f $REF -o {output.bam} {input.bam}
+        lofreq indelqual --dindel -f $REF -o {output.bam} {input.bam} 2> /dev/null
         samtools index {output.bam}
         """
 
@@ -303,7 +325,7 @@ rule call_variants:
         """
         REF=$(cat {input.ref_txt})
         lofreq call-parallel --no-baq --call-indels --pp-threads {threads} \
-            -f $REF -o {wildcards.sample}.raw.vcf {input.bam}
+            -f $REF -o {wildcards.sample}.raw.vcf {input.bam} 2> /dev/null
         bgzip -f {wildcards.sample}.raw.vcf
         tabix -p vcf {wildcards.sample}.raw.vcf.gz
         mv {wildcards.sample}.raw.vcf.gz     {output.vcf}
@@ -312,15 +334,26 @@ rule call_variants:
 
 rule filter_variants:
     input: vcf=rules.call_variants.output.vcf
-    params: thresh=SNP_THRESH
+    params: 
+        snp_thresh=SNP_THRESH,
+        min_depth=MIN_DEPTH,
+        min_qual=20,
+        indel_thresh=config['indel_threshold'],
     output:
         filt=os.path.join(OUTDIR, "{sample}", "{sample}.filt.vcf.gz"),
         filt_tbi=os.path.join(OUTDIR, "{sample}", "{sample}.filt.vcf.gz.tbi")
     threads: THREADS
     shell:
         """
-        bcftools view -i 'INFO/AF>={params.thresh}' -Ou {input.vcf} \
-        | bcftools view -Oz -o {output.filt}
+        bcftools +fill-tags {input.vcf} -Ou -- -t "TYPE" | \
+        bcftools norm -Ou -a -m -  2> /dev/null | \
+        bcftools view -f 'PASS' \
+            -i '(
+                  (TYPE="indel" && INFO/AF >= {params.indel_thresh}  && INFO/DP >= {params.min_depth} && QUAL >= {params.min_qual})
+                  ||
+                  (TYPE!="indel"   && INFO/AF >= {params.snp_thresh}    && INFO/DP >= {params.min_depth} && QUAL >= {params.min_qual})
+                )' \
+            -Oz -o {output.filt}
         tabix -f -p vcf {output.filt}
         """
 
@@ -336,8 +369,32 @@ rule add_fake_gt:
         tabix -f -p vcf {output.gt}
         """
 
+rule set_vcf_genotype:
+    input:
+        vcf_file=rules.add_fake_gt.output.gt,
+    output:
+        temp_vcf=temp(os.path.join(OUTDIR, "{sample}", "{sample}.temp.vcf.gz")),
+        vcf_file=os.path.join(OUTDIR, "{sample}", "{sample}.final.vcf.gz"),
+    log:
+        os.path.join(OUTDIR, "{sample}", "{sample}.bcftools_setGT.log"),
+    params:
+        snv_freq=config["snp_threshold"],
+        con_freq=config["consensus_threshold"],
+        indel_freq=config["indel_threshold"],
+    message:
+        "setting conditional GT for {wildcards.sample}"
+    shell:
+        """
+        cp {input.vcf_file} {output.temp_vcf}
+        bcftools index -f {output.temp_vcf}
+        bcftools +setGT {output.temp_vcf} -- -t q -i 'GT="1/1" && INFO/AF < {params.con_freq}' -n 'c:0/1' 2>> {log} | \
+        bcftools +setGT -- -t q -i 'TYPE="indel" && INFO/AF < {params.indel_freq}' -n . 2>> {log} | \
+        bcftools +setGT -o {output.vcf_file} -- -t q -i 'GT="1/1" && INFO/AF >= {params.con_freq}' -n 'c:1/1' 2>> {log}
+        bcftools index -f {output.vcf_file}
+        """
+
 rule variants_bed:
-    input: vcf=rules.add_fake_gt.output.gt
+    input: vcf=rules.set_vcf_genotype.output.vcf_file
     params: min_depth=MIN_DEPTH
     output: variants_bed=temp(os.path.join(OUTDIR, "{sample}", "{sample}.variants.bed"))
     shell:
@@ -362,15 +419,17 @@ rule depth_mask:
 
 rule consensus:
     input:
-        ref_txt=rules.choose_ref.output.ref_txt,
-        mask    =rules.depth_mask.output.mask,
-        vcf    =rules.add_fake_gt.output.gt
+        ref_txt = rules.choose_ref.output.ref_txt,
+        mask    = rules.depth_mask.output.mask,
+        vcf     = rules.set_vcf_genotype.output.vcf_file
     params:
         prefix="{sample}",
         consensus_threshold = CONSENSUS_THRESH,
         min_depth=MIN_DEPTH,
     output:
         fasta=os.path.join(OUTDIR, "{sample}", "{sample}.consensus.fasta")
+    log:
+        os.path.join(OUTDIR, "{sample}", "{sample}.bcftools_consensus.log")
     shell:
         """
         REF=$(cat {input.ref_txt})
@@ -378,9 +437,33 @@ rule consensus:
             -f $REF \
             --mark-del '-' \
             -m {input.mask} \
-            -H I \
-            -i 'INFO/DP >= {params.min_depth} & GT!="mis"' {input.vcf} -o {output.fasta}
+            -i 'INFO/DP >= {params.min_depth} & INFO/AF >= {params.consensus_threshold} & GT!="mis"' {input.vcf} -o {output.fasta} 2 > {log}
         """
+
+rule consensus_ambiguities:
+    input:
+        ref_txt = rules.choose_ref.output.ref_txt,
+        mask    = rules.depth_mask.output.mask,
+        vcf     = rules.set_vcf_genotype.output.vcf_file
+    params:
+        prefix="{sample}",
+        consensus_threshold = CONSENSUS_THRESH,
+        min_depth=MIN_DEPTH,
+    output:
+        fasta=os.path.join(OUTDIR, "{sample}", "{sample}.IUPAC_consensus.fasta")
+    log:
+        os.path.join(OUTDIR, "{sample}", "{sample}.bcftools_iupac_consensus.log")
+    shell:
+        """
+        REF=$(cat {input.ref_txt})
+        bcftools consensus -p "{params.prefix} IUPAC " \
+            -f $REF \
+            --mark-del '-' \
+            -m {input.mask} \
+            -H I \
+            -i 'INFO/DP >= {params.min_depth} & GT!="mis"' {input.vcf} -o {output.fasta} 2 > {log}
+        """
+
 
 rule update_nextclade:
     wildcard_constraints:
@@ -394,7 +477,7 @@ rule update_nextclade:
     shell:
         """
         mkdir -p {params.dir}
-        nextclade dataset get --name {params.dname} -o {params.dir}
+        nextclade dataset get --name {params.dname} -o {params.dir} 2> /dev/null
         echo "dataset ready" > {output.ready}
         """
 
@@ -433,7 +516,7 @@ rule nextclade:
         nextclade run \
           --input-dataset=$DATASET \
           --output-tsv={output.report} \
-          --jobs 1 {input.fasta}
+          --jobs 1 {input.fasta} 2> /dev/null
         """
 
 ###############################################################################
@@ -442,10 +525,10 @@ rule nextclade:
 rule qc_samples:
     input:
         profiling = rules.sylph_profile.output.custom,
-        reports   = expand(
-            os.path.join(OUTDIR, "{sample}", "{sample}.nextclade_report.tsv"),
-            sample = SAMPLES
-        )
+        reports   = lambda wc: [
+            os.path.join(OUTDIR, s, f"{s}.nextclade_report.tsv")
+            for s in get_mapped_samples()
+        ]
     output:
         csv        = os.path.join(OUTDIR, "overall_samples_qc_summary.csv"),
         merged_nc  = os.path.join(OUTDIR, "all_nextclade_merged.tsv")

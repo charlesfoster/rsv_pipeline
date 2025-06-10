@@ -5,8 +5,8 @@
 #########
 
 ## input/output
-reads_dir:  "reads"
-outdir:     "results"
+reads_dir:  "/Volumes/DATA_4tb/RSV_Reads/2022_rsv_4565"
+outdir:     "results/Pediatrics_2022"
 suffix1: "_L001_R1_001.fastq.gz"
 suffix2: "_L001_R2_001.fastq.gz"
 remove_sample_index: True
@@ -19,7 +19,8 @@ keep_trimmed_reads: False
 ## analysis parameters
 min_depth:  10
 consensus_threshold : 0.5
-snp_threshold : 0.1
+snp_threshold : 0.03
+indel_threshold : 0.03
 mixed_threshold : 0.1
 
 #########
@@ -27,17 +28,23 @@ mixed_threshold : 0.1
 #########
 
 ## reference and database files
-refs:
-  RSVA:  "data/RSVA_ref.fasta"
-  RSVB:  "data/RSVB_ref.fasta"
-primers_bed: 
-  RSVA:  "data/RSVA.primer.bed"
-  RSVB:  "data/RSVB.primer.bed"
-syldb:   "data/rsv_database.syldb"
-nextclade_dataset:
-  RSVA: "data/rsv_a"
-  RSVB: "data/rsv_b"
+# note: these will be downloaded automatically if not present
 nextclade_name:
   RSVA: "rsv_a"
   RSVB: "rsv_b"
-
+nextclade_dataset:
+  RSVA: "data/rsv_a"
+  RSVB: "data/rsv_b"
+# note: these will be present in the nextclade download
+#    Can still be changed to custom references, but you will need to
+#        ensure that you have created appropriate bed files for primers.
+refs:
+  RSVA: "data/rsv_a/reference.fasta"
+  RSVB: "data/rsv_b/reference.fasta"
+primers_bed: 
+  RSVA:  "data/RSVA.primer.bed"
+  RSVB:  "data/RSVB.primer.bed"
+# note: pre-built based on the nextclade references
+#    Can still be changed to custom databases, but you will need to
+#        ensure that you have created appropriate syldb files
+syldb:   "data/rsv_database.syldb"
