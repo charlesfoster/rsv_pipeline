@@ -55,6 +55,10 @@ def all_inputs(wildcards):
         os.path.join(OUTDIR, s, f"{s}.IUPAC_consensus.fasta")
         for s in samples
     ]
+    csq_vcfs   = [
+        os.path.join(OUTDIR, s, f"{s}.csq.vcf.gz")
+        for s in samples
+    ]
     reports   = [
         os.path.join(OUTDIR, s, f"{s}.nextclade_report.tsv")
         for s in samples
@@ -62,14 +66,15 @@ def all_inputs(wildcards):
     # and your final QC outputs
     others = [
         os.path.join(OUTDIR, "overall_samples_qc_summary.csv"),
-        os.path.join(OUTDIR, "all_nextclade_merged.tsv")
+        os.path.join(OUTDIR, "all_nextclade_merged.tsv"),
+        os.path.join(OUTDIR, "all_amino_acid_changes.tsv"),
     ]
     # plus the global nextclade‐ready flags
     flags = [
         os.path.join(OUTDIR, f".nextclade_{st}_ready.txt")
         for st in REFS.keys()
     ]
-    return [map_file] + flags + consensus + consensus_ambiguities + reports + others
+    return [map_file] + flags + consensus + consensus_ambiguities + reports + others + csq_vcfs
 
 
 def get_mapped_samples():
@@ -280,6 +285,26 @@ rule choose_bed:
         with open(output.bed_txt, "w") as f:
             f.write(bed_path + "\n")
 
+rule choose_gff3:
+    input:  MAP
+    output: gff3_txt=os.path.join(OUTDIR, "{sample}", "gff3.txt")
+    run:
+        import os
+        os.makedirs(os.path.dirname(output.gff3_txt), exist_ok=True)
+        subtype = None
+        with open(input[0]) as fh:
+            for line in fh:
+                s, st = line.rstrip().split("\t")
+                if s == wildcards.sample:
+                    subtype = st
+                    break
+        if subtype is None:
+            raise ValueError(f"{wildcards.sample} not found in {input[0]}")
+        gff3_path = config["annotations"][subtype]
+        with open(output.gff3_txt, "w") as f:
+            f.write(gff3_path + "\n")
+
+
 rule clip:
     input:
         bed_txt = rules.choose_bed.output.bed_txt,
@@ -392,6 +417,74 @@ rule set_vcf_genotype:
         bcftools +setGT -o {output.vcf_file} -- -t q -i 'GT="1/1" && INFO/AF >= {params.con_freq}' -n 'c:1/1' 2>> {log}
         bcftools index -f {output.vcf_file}
         """
+
+rule bcftools_csq:
+    input:
+        vcf=rules.set_vcf_genotype.output.vcf_file,
+        gff3_txt = rules.choose_gff3.output.gff3_txt,
+        ref_txt = rules.choose_ref.output.ref_txt,
+    output:
+        csq_vcf=os.path.join(OUTDIR, "{sample}", "{sample}.csq.vcf.gz"),
+        csq_tsv=os.path.join(OUTDIR, "{sample}", "{sample}.amino_acid_consequences.tsv"),
+    log:
+        os.path.join(OUTDIR, "{sample}", "{sample}.bcftools_csq.log"),
+    params:
+    message:
+        "calling amino acid changes against reference for {wildcards.sample}"
+    shell:
+        """
+        GFF3=$(cat {input.gff3_txt})
+        REF=$(cat {input.ref_txt})
+        bcftools csq -i "INFO/AF >= 0.50 && INFO/DP4[2]+INFO/DP4[3] >= 10" -f $REF -g $GFF3 --phase m -Oz {input.vcf} > {output.csq_vcf}
+        bcftools index -f {output.csq_vcf}
+        printf "sample\treference\tpos\tref_allele\talt_allele\tdepth\tallele_freq\ttcsq_string\n" > {output.csq_tsv}
+        bcftools query -f'[%SAMPLE\t%CHROM\t%POS\t%REF\t%ALT\t%INFO/DP\t%INFO/AF\t%TBCSQ\n]' {output.csq_vcf} | cut -f1-8 >> {output.csq_tsv}
+        """
+
+CSQ_TABLES, = glob_wildcards(
+    os.path.join(OUTDIR, "{sample}", "{sample}.amino_acid_consequences.tsv")
+)
+
+rule merge_and_parse_csq:
+    input:
+        csq_tsvs = expand(os.path.join(OUTDIR,
+                            "{sample}",
+                            "{sample}.amino_acid_consequences.tsv"),
+               sample=CSQ_TABLES)
+    output:
+        merged = os.path.join(OUTDIR, "all_amino_acid_changes.tsv"),
+    run:
+        import pandas as pd, pathlib
+
+        # ── 1. concatenate all tables ───────────────────────────
+        df = pd.concat((pd.read_csv(t, sep="\t") for t in input.csq_tsvs),
+                       ignore_index=True)
+
+        
+        # ── 2. helper to parse the bcftools-csq string ─────────
+        def parse_tcsq(s: str):
+            parts = s.split("|")
+            # ── if the string does not have the expected structure, just replicate it ──
+            if len(parts) < 6:
+                return pd.Series([s, s, s])     # category, gene, aa_effect all = raw string
+            category, gene, aa_field = parts[0], parts[1], parts[5]
+            if category == "synonymous":
+                aa_effect = f"{aa_field[-1]}{aa_field[:-1]}="
+            elif category == "missense":
+                if ">" in aa_field:                         # well-formed missense
+                    left, right = aa_field.split(">")
+                    aa_effect = f"{left[-1]}{left[:-1]}{right[-1]}"
+                else:                                       # malformed missense → propagate
+                    return pd.Series([s, s, s])
+            else:
+                aa_effect = aa_field                        # for other categories
+            return pd.Series([category, gene, aa_effect])
+
+        # ── 3. add new columns ─────────────────────────────────
+        df[["category", "gene", "aa_effect"]] = df["tcsq_string"].apply(parse_tcsq)
+
+        # ── 4. write output ────────────────────────────────────
+        df.to_csv(output.merged, sep="\t", index=False)
 
 rule variants_bed:
     input: vcf=rules.set_vcf_genotype.output.vcf_file

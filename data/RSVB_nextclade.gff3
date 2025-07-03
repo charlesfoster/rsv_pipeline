@@ -1,0 +1,35 @@
+##gff-version 3
+##sequence-region EPI_ISL_1653999 1 15222
+EPI_ISL_1653999	.	gene	57	476	.	+	.	ID=gene:NS1;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	57	476	.	+	.	ID=transcript:NS1_t1;Parent=gene:NS1;biotype=protein_coding
+EPI_ISL_1653999	.	gene	584	958	.	+	.	ID=gene:NS2;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	584	958	.	+	.	ID=transcript:NS2_t1;Parent=gene:NS2;biotype=protein_coding
+EPI_ISL_1653999	.	gene	1097	2272	.	+	.	ID=gene:N;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	1097	2272	.	+	.	ID=transcript:N_t1;Parent=gene:N;biotype=protein_coding
+EPI_ISL_1653999	.	gene	2305	3030	.	+	.	ID=gene:P;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	2305	3030	.	+	.	ID=transcript:P_t1;Parent=gene:P;biotype=protein_coding
+EPI_ISL_1653999	.	gene	3220	3990	.	+	.	ID=gene:M;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	3220	3990	.	+	.	ID=transcript:M_t1;Parent=gene:M;biotype=protein_coding
+EPI_ISL_1653999	.	gene	4259	4456	.	+	.	ID=gene:SH;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	4259	4456	.	+	.	ID=transcript:SH_t1;Parent=gene:SH;biotype=protein_coding
+EPI_ISL_1653999	.	gene	4646	5578	.	+	.	ID=gene:G;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	4646	5578	.	+	.	ID=transcript:G_t1;Parent=gene:G;biotype=protein_coding
+EPI_ISL_1653999	.	gene	5676	7400	.	+	.	ID=gene:F;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	5676	7400	.	+	.	ID=transcript:F_t1;Parent=gene:F;biotype=protein_coding
+EPI_ISL_1653999	.	gene	7627	8214	.	+	.	ID=gene:M2-1;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	7627	8214	.	+	.	ID=transcript:M2-1_t1;Parent=gene:M2-1;biotype=protein_coding
+EPI_ISL_1653999	.	gene	8180	8452	.	+	.	ID=gene:M2-2;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	8180	8452	.	+	.	ID=transcript:M2-2_t1;Parent=gene:M2-2;biotype=protein_coding
+EPI_ISL_1653999	.	gene	8518	15018	.	+	.	ID=gene:L;biotype=protein_coding
+EPI_ISL_1653999	.	transcript	8518	15018	.	+	.	ID=transcript:L_t1;Parent=gene:L;biotype=protein_coding
+EPI_ISL_1653999	.	CDS	57	476	.	+	0	Parent=transcript:NS1_t1
+EPI_ISL_1653999	.	CDS	584	958	.	+	0	Parent=transcript:NS2_t1
+EPI_ISL_1653999	.	CDS	1097	2272	.	+	0	Parent=transcript:N_t1
+EPI_ISL_1653999	.	CDS	2305	3030	.	+	0	Parent=transcript:P_t1
+EPI_ISL_1653999	.	CDS	3220	3990	.	+	0	Parent=transcript:M_t1
+EPI_ISL_1653999	.	CDS	4259	4456	.	+	0	Parent=transcript:SH_t1
+EPI_ISL_1653999	.	CDS	4646	5578	.	+	0	Parent=transcript:G_t1
+EPI_ISL_1653999	.	CDS	5676	7400	.	+	0	Parent=transcript:F_t1
+EPI_ISL_1653999	.	CDS	7627	8214	.	+	0	Parent=transcript:M2-1_t1
+EPI_ISL_1653999	.	CDS	8180	8452	.	+	0	Parent=transcript:M2-2_t1
+EPI_ISL_1653999	.	CDS	8518	15018	.	+	0	Parent=transcript:L_t1

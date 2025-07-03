@@ -5,8 +5,8 @@
 #########
 
 ## input/output
-reads_dir:  "/Volumes/DATA_4tb/RSV_Reads/2022_rsv_4565"
-outdir:     "results/Pediatrics_2022"
+reads_dir:  ""
+outdir:     ""
 suffix1: "_L001_R1_001.fastq.gz"
 suffix2: "_L001_R2_001.fastq.gz"
 remove_sample_index: True
@@ -39,11 +39,21 @@ nextclade_dataset:
 #    Can still be changed to custom references, but you will need to
 #        ensure that you have created appropriate bed files for primers.
 refs:
-  RSVA: "data/rsv_a/reference.fasta"
-  RSVB: "data/rsv_b/reference.fasta"
+  RSVA: "data/prototype_references/NC_038235.1.fasta"
+  RSVB: "data/prototype_references/NC_001781.1.fasta"
+  # RSVA: "data/rsv_a/reference.fasta"
+  # RSVB: "data/rsv_b/reference.fasta"
 primers_bed: 
-  RSVA:  "data/RSVA.primer.bed"
-  RSVB:  "data/RSVB.primer.bed"
+  RSVA:  "data/RSVA_prototype.mapped.bed"
+  RSVB:  "data/RSVB_prototype.mapped.bed"
+  # RSVA:  "data/RSVA.primer.bed"
+  # RSVB:  "sandbox/RSVB.primer.bed"
+annotations: 
+  RSVA:  "data/prototype_references/NC_038235.1.gff3"
+  RSVB:  "data/prototype_references/NC_001781.1.gff3"
+  # RSVA: "data/RSVA_nextclade.gff3"
+  # RSVB: "data/RSVB_nextclade.gff3"
+
 # note: pre-built based on the nextclade references
 #    Can still be changed to custom databases, but you will need to
 #        ensure that you have created appropriate syldb files

@@ -1,0 +1,9 @@
+
+
+Building a new DB, current time: 06/27/2025 12:20:01
+New DB name:   /Users/charles/Documents/Supervision/Julia/RSV/rsv_pipeline/scripts/non_HPIV3
+New DB title:  non_HPIV3
+Sequence type: Nucleotide
+Keep MBits: T
+Maximum file size: 3000000000B
+BLAST options error: File non_HPIV3.fasta does not exist

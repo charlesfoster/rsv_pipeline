@@ -1,0 +1,35 @@
+##gff-version 3
+##sequence-region EPI_ISL_412866 1 15225
+EPI_ISL_412866	.	gene	70	489	.	+	.	ID=gene:NS1;biotype=protein_coding;Name=NS1
+EPI_ISL_412866	.	transcript	70	489	.	+	.	ID=transcript:NS1_t1;Parent=gene:NS1;biotype=protein_coding
+EPI_ISL_412866	.	gene	599	973	.	+	.	ID=gene:NS2;biotype=protein_coding;Name=NS2
+EPI_ISL_412866	.	transcript	599	973	.	+	.	ID=transcript:NS2_t1;Parent=gene:NS2;biotype=protein_coding
+EPI_ISL_412866	.	gene	1111	2286	.	+	.	ID=gene:N;biotype=protein_coding;Name=N
+EPI_ISL_412866	.	transcript	1111	2286	.	+	.	ID=transcript:N_t1;Parent=gene:N;biotype=protein_coding
+EPI_ISL_412866	.	gene	2318	3043	.	+	.	ID=gene:P;biotype=protein_coding;Name=P
+EPI_ISL_412866	.	transcript	2318	3043	.	+	.	ID=transcript:P_t1;Parent=gene:P;biotype=protein_coding
+EPI_ISL_412866	.	gene	3226	3996	.	+	.	ID=gene:M;biotype=protein_coding;Name=M
+EPI_ISL_412866	.	transcript	3226	3996	.	+	.	ID=transcript:M_t1;Parent=gene:M;biotype=protein_coding
+EPI_ISL_412866	.	gene	4266	4460	.	+	.	ID=gene:SH;biotype=protein_coding;Name=SH
+EPI_ISL_412866	.	transcript	4266	4460	.	+	.	ID=transcript:SH_t1;Parent=gene:SH;biotype=protein_coding
+EPI_ISL_412866	.	gene	4652	5617	.	+	.	ID=gene:G;biotype=protein_coding;Name=G
+EPI_ISL_412866	.	transcript	4652	5617	.	+	.	ID=transcript:G_t1;Parent=gene:G;biotype=protein_coding
+EPI_ISL_412866	.	gene	5697	7421	.	+	.	ID=gene:F;biotype=protein_coding;Name=F
+EPI_ISL_412866	.	transcript	5697	7421	.	+	.	ID=transcript:F_t1;Parent=gene:F;biotype=protein_coding
+EPI_ISL_412866	.	gene	7640	8224	.	+	.	ID=gene:M2-1;biotype=protein_coding;Name=M2-1
+EPI_ISL_412866	.	transcript	7640	8224	.	+	.	ID=transcript:M2-1_t1;Parent=gene:M2-1;biotype=protein_coding
+EPI_ISL_412866	.	gene	8193	8465	.	+	.	ID=gene:M2-2;biotype=protein_coding;Name=M2-2
+EPI_ISL_412866	.	transcript	8193	8465	.	+	.	ID=transcript:M2-2_t1;Parent=gene:M2-2;biotype=protein_coding
+EPI_ISL_412866	.	gene	8532	15029	.	+	.	ID=gene:L;biotype=protein_coding;Name=L
+EPI_ISL_412866	.	transcript	8532	15029	.	+	.	ID=transcript:L_t1;Parent=gene:L;biotype=protein_coding
+EPI_ISL_412866	.	CDS	70	489	.	+	0	Parent=transcript:NS1_t1
+EPI_ISL_412866	.	CDS	599	973	.	+	0	Parent=transcript:NS2_t1
+EPI_ISL_412866	.	CDS	1111	2286	.	+	0	Parent=transcript:N_t1
+EPI_ISL_412866	.	CDS	2318	3043	.	+	0	Parent=transcript:P_t1
+EPI_ISL_412866	.	CDS	3226	3996	.	+	0	Parent=transcript:M_t1
+EPI_ISL_412866	.	CDS	4266	4460	.	+	0	Parent=transcript:SH_t1
+EPI_ISL_412866	.	CDS	4652	5617	.	+	0	Parent=transcript:G_t1
+EPI_ISL_412866	.	CDS	5697	7421	.	+	0	Parent=transcript:F_t1
+EPI_ISL_412866	.	CDS	7640	8224	.	+	0	Parent=transcript:M2-1_t1
+EPI_ISL_412866	.	CDS	8193	8465	.	+	0	Parent=transcript:M2-2_t1
+EPI_ISL_412866	.	CDS	8532	15029	.	+	0	Parent=transcript:L_t1
