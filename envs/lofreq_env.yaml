@@ -1,0 +1,9 @@
+name: lofreq_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - lofreq=2.1.5
+  - htslib=1.21  # provides bgzip, tabix
+  - samtools=1.21

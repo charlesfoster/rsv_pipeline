@@ -125,6 +125,8 @@ rule sylph_profile:
     output:
         custom=os.path.join(OUTDIR, "sylph_subtype_profiling.tsv")
     threads: THREADS
+    conda:
+        "envs/sylph_profile_env.yaml"
     shell:
         """
         mkdir -p {OUTDIR}
@@ -210,6 +212,8 @@ rule fastp:
         html=os.path.join(OUTDIR, "{sample}", "{sample}_fastp.html"),
         json=os.path.join(OUTDIR, "{sample}", "{sample}_fastp.json")
     threads: THREADS
+    conda:
+        "envs/fastp_env.yaml"
     shell:
         """
         mkdir -p {OUTDIR}/{wildcards.sample}
@@ -239,6 +243,8 @@ rule index_refs:
             for ext in (".bwt", ".pac", ".ann", ".amb", ".sa", ".fai")
         ]
     threads: 1
+    conda:
+        "envs/bwa_samtools_env.yaml"
     shell:
         """
         for REF in {params.refs}; do
@@ -258,6 +264,8 @@ rule bwa_mem:
         bam = temp(os.path.join(OUTDIR, "{sample}", "{sample}.sorted.bam")),
         csi = temp(os.path.join(OUTDIR, "{sample}", "{sample}.sorted.bam.csi"))
     threads: 4
+    conda:
+        "envs/bwa_samtools_env.yaml"
     shell:
         """
         REF=$(cat {input.ref_txt})
@@ -314,6 +322,8 @@ rule clip:
         bai = temp(os.path.join(OUTDIR, "{sample}", "{sample}.clipped.bam.bai")),
         log = os.path.join(OUTDIR, "{sample}", "{sample}.ampliconclip.log")
     threads: THREADS
+    conda:
+        "envs/bwa_samtools_env.yaml"
     shell:
         """
         BED=$(cat {input.bed_txt})
@@ -331,6 +341,8 @@ rule indelqual:
         bam=os.path.join(OUTDIR, "{sample}", "{sample}.indelq.bam"),
         bai=os.path.join(OUTDIR, "{sample}", "{sample}.indelq.bam.bai")
     threads: THREADS
+    conda:
+        "envs/lofreq_env.yaml"
     shell:
         """
         REF=$(cat {input.ref_txt})
@@ -346,6 +358,8 @@ rule call_variants:
         vcf=os.path.join(OUTDIR, "{sample}", "{sample}.raw.vcf.gz"),
         tbi=os.path.join(OUTDIR, "{sample}", "{sample}.raw.vcf.gz.tbi")
     threads: 4
+    conda:
+        "envs/lofreq_env.yaml"
     shell:
         """
         REF=$(cat {input.ref_txt})
@@ -368,6 +382,8 @@ rule filter_variants:
         filt=os.path.join(OUTDIR, "{sample}", "{sample}.filt.vcf.gz"),
         filt_tbi=os.path.join(OUTDIR, "{sample}", "{sample}.filt.vcf.gz.tbi")
     threads: THREADS
+    conda:
+        "envs/bcftools_env.yaml"
     shell:
         """
         bcftools +fill-tags {input.vcf} -Ou -- -t "TYPE" | \
@@ -387,6 +403,8 @@ rule add_fake_gt:
     output:
         gt=os.path.join(OUTDIR, "{sample}", "{sample}.gt.vcf.gz"),
         gt_tbi=os.path.join(OUTDIR, "{sample}", "{sample}.gt.vcf.gz.tbi")
+    conda:
+        "envs/shell_env.yaml"
     shell:
         """
         bash scripts/add_fake_genotype.sh \
@@ -408,6 +426,8 @@ rule set_vcf_genotype:
         indel_freq=config["indel_threshold"],
     message:
         "setting conditional GT for {wildcards.sample}"
+    conda:
+        "envs/bcftools_env.yaml"
     shell:
         """
         cp {input.vcf_file} {output.temp_vcf}
@@ -431,6 +451,8 @@ rule bcftools_csq:
     params:
     message:
         "calling amino acid changes against reference for {wildcards.sample}"
+    conda:
+        "envs/bcftools_env.yaml"
     shell:
         """
         GFF3=$(cat {input.gff3_txt})
@@ -441,16 +463,12 @@ rule bcftools_csq:
         bcftools query -f'[%SAMPLE\t%CHROM\t%POS\t%REF\t%ALT\t%INFO/DP\t%INFO/AF\t%TBCSQ\n]' {output.csq_vcf} | cut -f1-8 >> {output.csq_tsv}
         """
 
-CSQ_TABLES, = glob_wildcards(
-    os.path.join(OUTDIR, "{sample}", "{sample}.amino_acid_consequences.tsv")
-)
-
 rule merge_and_parse_csq:
     input:
-        csq_tsvs = expand(os.path.join(OUTDIR,
-                            "{sample}",
-                            "{sample}.amino_acid_consequences.tsv"),
-               sample=CSQ_TABLES)
+        csq_tsvs   = lambda wc: [
+            os.path.join(OUTDIR, s, f"{s}.amino_acid_consequences.tsv")
+            for s in get_mapped_samples()
+        ]
     output:
         merged = os.path.join(OUTDIR, "all_amino_acid_changes.tsv"),
     run:
@@ -490,6 +508,8 @@ rule variants_bed:
     input: vcf=rules.set_vcf_genotype.output.vcf_file
     params: min_depth=MIN_DEPTH
     output: variants_bed=temp(os.path.join(OUTDIR, "{sample}", "{sample}.variants.bed"))
+    conda:
+        "envs/bcftools_env.yaml"
     shell:
         """
         bcftools query -f'%CHROM\t%POS0\t%END\n' {input.vcf} > {output.variants_bed}
@@ -503,6 +523,8 @@ rule depth_mask:
         min_depth=MIN_DEPTH
     output:
         mask=os.path.join(OUTDIR, "{sample}", "{sample}.lowdepth.bed")
+    conda:
+        "envs/bedtools_env.yaml"
     shell:
         """
         bedtools genomecov -bga -ibam {input.bam} \
@@ -523,6 +545,8 @@ rule consensus:
         fasta=os.path.join(OUTDIR, "{sample}", "{sample}.consensus.fasta")
     log:
         os.path.join(OUTDIR, "{sample}", "{sample}.bcftools_consensus.log")
+    conda:
+        "envs/bcftools_env.yaml"
     shell:
         """
         REF=$(cat {input.ref_txt})
@@ -546,6 +570,8 @@ rule consensus_ambiguities:
         fasta=os.path.join(OUTDIR, "{sample}", "{sample}.IUPAC_consensus.fasta")
     log:
         os.path.join(OUTDIR, "{sample}", "{sample}.bcftools_iupac_consensus.log")
+    conda:
+        "envs/bcftools_env.yaml"
     shell:
         """
         REF=$(cat {input.ref_txt})
@@ -567,6 +593,8 @@ rule update_nextclade:
         dir   = lambda wc: config["nextclade_dataset"][wc.subtype],
         dname = lambda wc: config["nextclade_name"][wc.subtype]
     threads: 1
+    conda:
+        "envs/nextclade_env.yaml"
     shell:
         """
         mkdir -p {params.dir}
@@ -603,6 +631,8 @@ rule nextclade:
     output:
         report = os.path.join(OUTDIR, "{sample}", "{sample}.nextclade_report.tsv")
     threads: 1
+    conda:
+        "envs/nextclade_env.yaml"
     shell:
         """
         DATASET=$(cat {input.dataset_txt})

@@ -1,0 +1,7 @@
+name: nextclade_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - nextclade=3.13.3

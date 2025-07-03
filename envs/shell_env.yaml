@@ -1,0 +1,8 @@
+name: shell_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bash
+  - htslib=1.21  # provides tabix

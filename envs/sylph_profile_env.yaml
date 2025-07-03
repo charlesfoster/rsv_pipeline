@@ -1,0 +1,7 @@
+name: sylph_profile_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - sylph=0.8.1
