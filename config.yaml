@@ -12,6 +12,9 @@ suffix2: "_L001_R2_001.fastq.gz"
 remove_sample_index: True
 keep_trimmed_reads: False
 wastewater_mode: False
+freyja_sampling_times: ""
+freyja_plot_interval: ""
+freyja_custom_lineages: ""
 
 #########
 # SOMETIMES NEEDS TO BE CHANGED

@@ -11,6 +11,26 @@ configfile: "config.yaml"
 # FUNCTIONS
 ###############################################################################
 
+def as_bool(value, default=False):
+    """
+    Normalize truthy/falsey config values coming from YAML or CLI overrides.
+    Handles bools, common strings, and numeric forms.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        val = value.strip().lower()
+        if val in {"true", "1", "yes", "y", "on"}:
+            return True
+        if val in {"false", "0", "no", "n", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return bool(value)
+
+
 def derive_samples(reads_dir, suffix, remove_index):
     """
     Discover samples in reads_dir that match *suffix* (which contains one '*').
@@ -82,7 +102,9 @@ def all_inputs(wildcards):
             for s in samples
         ]
         aggregate = os.path.join(FREYJA_AGG_DIR, "freyja_aggregate.tsv")
-        targets += demix_outputs + [aggregate]
+        plot = FREYJA_PLOT_PATH
+        version = FREYJA_VERSION_PATH
+        targets += demix_outputs + [aggregate, plot, version]
     return targets
 
 
@@ -106,20 +128,26 @@ SNP_THRESH        = config["snp_threshold"]
 CONSENSUS_THRESH  = config["consensus_threshold"]
 SUFFIX1           = config["suffix1"]
 SUFFIX2           = config["suffix2"]
+KEEP_TRIMMED      = as_bool(config.get("keep_trimmed_reads", False))
 
 # file produced by the parser
 MAP = os.path.join(OUTDIR, "selected_sample_subtypes.tsv")
-WASTEWATER_MODE   = config.get("wastewater_mode", False)
-FREYJA_BASE       = os.path.join(OUTDIR, "freyja")
-FREYJA_AGG_DIR    = os.path.join(OUTDIR, "freyja_aggregated")
+WASTEWATER_MODE   = as_bool(config.get("wastewater_mode", False))
+FREYJA_BASE       = os.path.join(OUTDIR, "freyja_results")
+FREYJA_AGG_DIR    = os.path.join(OUTDIR, "freyja_results")
 FREYJA_AGG_INPUT_DIR = os.path.join(FREYJA_AGG_DIR, "inputs")
+FREYJA_PLOT_PATH  = os.path.join(FREYJA_AGG_DIR, "freyja_plot.pdf")
+FREYJA_PLOT_INTERVAL = config.get("freyja_plot_interval", "")
+FREYJA_SAMPLING_TIMES = config.get("freyja_sampling_times", "")
+FREYJA_CUSTOM_LINEAGES = config.get("freyja_custom_lineages", "")
+FREYJA_VERSION_PATH = os.path.join(FREYJA_AGG_DIR, "freyja_version.txt")
 
 ###############################################################################
 # DISCOVER SAMPLES
 ###############################################################################
 # SAMPLES = derive_samples(READS_DIR, SUFFIX1, config["remove_sample_index"])
 
-REMOVE_INDEX = config["remove_sample_index"]       # True / False
+REMOVE_INDEX = as_bool(config.get("remove_sample_index", False))       # True / False
 
 ###############################################################################
 # RULE: all
@@ -217,10 +245,10 @@ rule fastp:
              ))[0]
     output:
         r1   = temp(os.path.join(OUTDIR, "{sample}", "{sample}_R1.trimmed.fastq.gz")) \
-                   if not config["keep_trimmed_reads"] \
+                   if not KEEP_TRIMMED \
                    else os.path.join(OUTDIR, "{sample}", "{sample}_R1.trimmed.fastq.gz"),
         r2   = temp(os.path.join(OUTDIR, "{sample}", "{sample}_R2.trimmed.fastq.gz")) \
-                   if not config["keep_trimmed_reads"] \
+                   if not KEEP_TRIMMED \
                    else os.path.join(OUTDIR, "{sample}", "{sample}_R2.trimmed.fastq.gz"),
         html=os.path.join(OUTDIR, "{sample}", "{sample}_fastp.html"),
         json=os.path.join(OUTDIR, "{sample}", "{sample}_fastp.json")
@@ -283,7 +311,7 @@ rule bwa_mem:
         """
         REF=$(cat {input.ref_txt})
         bwa mem -t {threads} "$REF" {input.r1} {input.r2} 2> /dev/null \
-        | samtools sort -@ {threads} | \
+        | samtools sort -@ {threads} 2>/dev/null  | \
         samtools view -@ {threads} -F 4 --write-index -o {output.bam} -
         """
 
@@ -445,11 +473,11 @@ rule set_vcf_genotype:
     shell:
         """
         cp {input.vcf_file} {output.temp_vcf}
-        bcftools index -f {output.temp_vcf}
+        bcftools index -f {output.temp_vcf} >/dev/null 2>&1
         bcftools +setGT {output.temp_vcf} -- -t q -i 'GT="1/1" && INFO/AF < {params.con_freq}' -n 'c:0/1' 2>> {log} | \
         bcftools +setGT -- -t q -i 'TYPE="indel" && INFO/AF < {params.indel_freq}' -n . 2>> {log} | \
         bcftools +setGT -o {output.vcf_file} -- -t q -i 'GT="1/1" && INFO/AF >= {params.con_freq}' -n 'c:1/1' 2>> {log}
-        bcftools index -f {output.vcf_file}
+        bcftools index -f {output.vcf_file} >/dev/null 2>&1
         """
 
 if WASTEWATER_MODE:
@@ -465,8 +493,8 @@ if WASTEWATER_MODE:
         shell:
             """
             mkdir -p "{params.base_dir}"
-            freyja update --pathogen RSVa
-            freyja update --pathogen RSVb
+            freyja update --pathogen RSVa >/dev/null 2>&1
+            freyja update --pathogen RSVb >/dev/null 2>&1
             touch "{output.ready_rsva}" "{output.ready_rsvb}"
             """
 
@@ -488,11 +516,11 @@ if WASTEWATER_MODE:
 
     rule freyja_demix:
         input:
-            vcf=rules.set_vcf_genotype.output.vcf_file,
-            depths=rules.samtools_mpileup.output.depths,
-            map=MAP,
-            ready_a=rules.freyja_update.output.ready_rsva,
-            ready_b=rules.freyja_update.output.ready_rsvb
+            vcf     = rules.set_vcf_genotype.output.vcf_file,
+            depths  = rules.samtools_mpileup.output.depths,
+            map     = MAP,
+            ready_a = rules.freyja_update.output.ready_rsva,
+            ready_b = rules.freyja_update.output.ready_rsvb
         output:
             demix=os.path.join(OUTDIR, "{sample}", "{sample}.freyja_demix.txt")
         conda:
@@ -501,7 +529,6 @@ if WASTEWATER_MODE:
             import gzip
             import os
             import shutil
-            import tempfile
             from shlex import quote
 
             subtype = None
@@ -521,24 +548,24 @@ if WASTEWATER_MODE:
                 raise ValueError(f"Unsupported subtype '{subtype}' for freyja demix") from err
 
             os.makedirs(os.path.dirname(output.demix), exist_ok=True)
+
             vcf_path = input.vcf
             tmp_path = None
 
             if str(vcf_path).endswith(".gz"):
-                tmp = tempfile.NamedTemporaryFile(
-                    delete=False,
-                    suffix=".vcf",
-                    dir=os.path.dirname(output.demix)
+                tmp_path = os.path.join(
+                    os.path.dirname(output.demix),
+                    f"{wildcards.sample}.freyja_input.vcf"
                 )
-                tmp_path = tmp.name
-                tmp.close()
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
                 with gzip.open(vcf_path, "rt") as src, open(tmp_path, "w") as dst:
                     shutil.copyfileobj(src, dst)
                 vcf_path = tmp_path
 
             try:
                 shell(
-                    "freyja demix {vcf} {depths} --output {out} --pathogen {pathogen}".format(
+                    "freyja demix {vcf} {depths} --output {out} --pathogen {pathogen} >/dev/null 2>&1".format(
                         vcf=quote(vcf_path),
                         depths=quote(input.depths),
                         out=quote(output.demix),
@@ -547,6 +574,29 @@ if WASTEWATER_MODE:
                 )
             finally:
                 if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
+    rule freyja_version:
+        input:
+            ready_a=rules.freyja_update.output.ready_rsva,
+            ready_b=rules.freyja_update.output.ready_rsvb
+        output:
+            version=FREYJA_VERSION_PATH
+        params:
+            outdir=FREYJA_AGG_DIR
+        conda:
+            "envs/freyja_env.yaml"
+        run:
+            import os
+            from shlex import quote
+
+            os.makedirs(params.outdir, exist_ok=True)
+            tmp_path = output.version + ".tmp"
+            try:
+                shell(f"freyja --version > {quote(tmp_path)} 2>/dev/null")
+                os.replace(tmp_path, output.version)
+            finally:
+                if os.path.exists(tmp_path):
                     os.remove(tmp_path)
 
     rule freyja_aggregate:
@@ -583,11 +633,75 @@ if WASTEWATER_MODE:
 
             indir_with_sep = indir if indir.endswith(os.sep) else indir + os.sep
             shell(
-                "freyja aggregate {indir} --output {out}".format(
+                "freyja aggregate {indir} --output {out} >/dev/null 2>&1".format(
                     indir=quote(indir_with_sep),
                     out=quote(output.aggregated)
                 )
             )
+
+            # Normalize sample identifiers by removing the temporary suffix that
+            # freyja demix emits when we supply decompressed VCFs.
+            with open(output.aggregated, "r+") as fh:
+                content = fh.read()
+                fh.seek(0)
+                fh.write(content.replace(".freyja_input.vcf", ""))
+                fh.truncate()
+
+    rule freyja_plot:
+        input:
+            aggregated=rules.freyja_aggregate.output.aggregated,
+            version=rules.freyja_version.output.version
+        output:
+            plot=FREYJA_PLOT_PATH
+        params:
+            times=FREYJA_SAMPLING_TIMES,
+            interval=FREYJA_PLOT_INTERVAL,
+            lineage=FREYJA_CUSTOM_LINEAGES
+        conda:
+            "envs/freyja_env.yaml"
+        run:
+            import os
+            from shlex import quote
+
+            out_dir = os.path.dirname(output.plot)
+            os.makedirs(out_dir, exist_ok=True)
+            cmd = [
+                "freyja",
+                "plot",
+                quote(input.aggregated),
+                "--output",
+                quote(output.plot),
+            ]
+            if params.times:
+                cmd.extend(["--times", quote(params.times)])
+            if params.interval:
+                cmd.extend(["--interval", quote(params.interval)])
+            if params.lineage:
+                cmd.extend(["--lineageyml", quote(params.lineage)])
+
+            shell(" ".join(cmd) + " >/dev/null 2>&1")
+
+            if not os.path.exists(output.plot):
+                candidates = [
+                    os.path.join(out_dir, "mix_plot.pdf"),
+                    os.path.join(out_dir, "plot.pdf"),
+                ]
+                moved = False
+                for candidate in candidates:
+                    if os.path.exists(candidate):
+                        os.replace(candidate, output.plot)
+                        moved = True
+                        break
+                if not moved:
+                    raise FileNotFoundError(
+                        f"freyja plot did not produce expected output at {output.plot}"
+                    )
+
+            # remove any stray PDFs created alongside the desired output
+            for entry in os.listdir(out_dir):
+                path = os.path.join(out_dir, entry)
+                if entry.endswith(".pdf") and path != output.plot and os.path.isfile(path):
+                    os.remove(path)
 
 rule bcftools_csq:
     input:
@@ -608,10 +722,10 @@ rule bcftools_csq:
         """
         GFF3=$(cat {input.gff3_txt})
         REF=$(cat {input.ref_txt})
-        bcftools csq -i "INFO/AF >= 0.50 && INFO/DP4[2]+INFO/DP4[3] >= 10" -f $REF -g $GFF3 --phase m -Oz {input.vcf} > {output.csq_vcf}
-        bcftools index -f {output.csq_vcf}
+        bcftools csq -i "INFO/AF >= 0.50 && INFO/DP4[2]+INFO/DP4[3] >= 10" -f $REF -g $GFF3 --phase m -Oz {input.vcf} > {output.csq_vcf} 2>/dev/null
+        bcftools index -f {output.csq_vcf} >/dev/null 2>&1
         printf "sample\treference\tpos\tref_allele\talt_allele\tdepth\tallele_freq\ttcsq_string\n" > {output.csq_tsv}
-        bcftools query -f'[%SAMPLE\t%CHROM\t%POS\t%REF\t%ALT\t%INFO/DP\t%INFO/AF\t%TBCSQ\n]' {output.csq_vcf} | cut -f1-8 >> {output.csq_tsv}
+        bcftools query -f'[%SAMPLE\t%CHROM\t%POS\t%REF\t%ALT\t%INFO/DP\t%INFO/AF\t%TBCSQ\n]' {output.csq_vcf} 2>/dev/null | cut -f1-8 >> {output.csq_tsv}
         """
 
 rule merge_and_parse_csq:
@@ -705,7 +819,7 @@ rule consensus:
             -f $REF \
             --mark-del '-' \
             -m {input.mask} \
-            -i 'INFO/DP >= {params.min_depth} & INFO/AF >= {params.consensus_threshold} & GT!="mis"' {input.vcf} -o {output.fasta} 2 > {log}
+            -i 'INFO/DP >= {params.min_depth} & INFO/AF >= {params.consensus_threshold} & GT!="mis"' {input.vcf} -o {output.fasta} >/dev/null 2> {log}
         """
 
 rule consensus_ambiguities:
@@ -731,7 +845,7 @@ rule consensus_ambiguities:
             --mark-del '-' \
             -m {input.mask} \
             -H I \
-            -i 'INFO/DP >= {params.min_depth} & GT!="mis"' {input.vcf} -o {output.fasta} 2 > {log}
+            -i 'INFO/DP >= {params.min_depth} & GT!="mis"' {input.vcf} -o {output.fasta} >/dev/null 2> {log}
         """
 
 
