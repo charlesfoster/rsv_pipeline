@@ -1,68 +1,89 @@
 # rsv_pipeline
-A pipeline to facilitate genomic surveillance of RSV using the ARTIC amplicon scheme(s) and paired end short-read sequencing.
 
-Author: Dr Charles Foster
+Genomic surveillance workflow for Respiratory Syncytial Virus (RSV) built on Snakemake and packaged for installation via the [`snk`](https://snakemake.github.io/snk) workflow manager.
 
-# Starting out
-## Clone the repo
-To begin with, clone the 'main' branch of this github repository:
+## Prerequisites
 
-```
-git clone https://github.com/charlesfoster/rsv_pipeline.git
+- [Mamba](https://mamba.readthedocs.io/en/latest/installation.html) or Conda for environment management.
+- The `snk` CLI (installed below).
+- Access to paired-end FASTQ reads produced with ARTIC-style schemes.
 
-cd rsv_pipeline
-```
+## Installation with `snk`
 
-## Set up a conda environment
-Ensure conda/mamba is installed. Easiest to use the Miniforge installer. See: https://conda-forge.org/download/
+```bash
+# create and activate a minimal environment that ships with snk
+mamba create -n snk -c bioconda snk
+mamba activate snk
 
-Next, install dependencies using `mamba`:
-
-```
-mamba env create -f environment.yml
+# install the workflow (ships as the CLI command `rsvp`)
+snk install charlesfoster/rsv_pipeline --name rsvp --force --dependency pandas
 ```
 
-# Running the pipeline
-## Quick start
-To run the pipeline, simply ensure you have changed to the pipeline directory, make sure the `config.yaml` file is accurate (see below), activate the conda environment, then run the Snakemake command.
+The command above places the workflow and its Snakemake environments under the active `snk` environment. Update it later with `snk install … --force`.
+
+## Running the workflow
+
+```bash
+rsvp run \
+  --reads-dir /path/to/reads \
+  --outdir results/rsv_run_01 \
+  --cores 8 \
+  --suffix1 _L001_R1_001.fastq.gz \
+  --suffix2 _L001_R2_001.fastq.gz
+```
+
+Key convenience flags include:
+
+- `--reads-dir` / `--outdir`: required input and output roots.
+- `--remove-sample-index` / `--no-remove-sample-index`: control how sample names are parsed from FASTQ filenames.
+- `--keep-trimmed-reads`: persist the intermediate FASTQ files if needed.
+- `--wastewater-mode`: enable the Freyja demixing and plotting branch.
+- `--freyja-sampling-times`, `--freyja-plot-interval`, `--freyja-custom-lineages`: optional metadata for Freyja plots.
+- `--min-depth`, `--consensus-threshold`, `--snp-threshold`, `--indel-threshold`, `--mixed-threshold`: adjust variant calling heuristics without editing `config.yaml`.
+
+The `rsvp run` wrapper forwards any unknown flags to Snakemake, so standard options such as `--quiet`, `--dry`, `--dag report.pdf`, and `--profile myprofile` behave exactly as they do in bare Snakemake. 
+
+To inspect every available option, run:
+
+```bash
+rsvp run --help
+```
+
+### First run
+When _first_ running the pipeline, it's necessary to copy the data and scripts from the `snk` installation like so:
 
 ```
-cd rsv_pipeline
-mamba activate rsv_pipeline
-snakemake --cores 8
+rsvp run \
+  -r data \
+  -r scripts \
+  --reads-dir /path/to/reads/folder \
+  --outdir results/test \
+  --keep-resources 
 ```
 
-Choose an appropriate value for `--cores` based on your machine.
+On subsequent runs, the `-r data`, `-r scripts` and `--keep-resources` parts can be omitted if:
+- you are running the pipeline from the same directory each time
+- you do not need to update the `data` and `scripts` folder, e.g. if the pipeline has changed
 
-## Configuration
-### Edit the config file
-Within the main directory is a file called `config.yaml`. You need to make sure that its values correspond to what you want to analyse.
+### Rerunning specific steps
 
-The file is divided into three broad sections: 
+Because `rsvp run` simply wraps Snakemake, you can bring forward any rerun behaviour by passing through native Snakemake switches. For example, to recompute Freyja demixing outputs:
 
-#### Input/Output:
-* reads_dir: the directory where your reads for analysis are stored.
-* outdir: the directory where your results should go.
-* suffix1: the 'suffix' of your forward reads (see below)
-* suffix2: the 'suffix' of your reverse reads (see below)
-* remove_sample_index: how the sample should be parsed from filenames
-* keep_trimmed_reads: should quality trimmed reads be kept?
+```bash
+rsvp run \
+  --reads-dir /path/to/reads/folder \
+  --outdir results/rsv_run_01 \
+  --wastewater-mode \
+  --forcerun freyja_demix
+```
 
-The suffix parameters control how the pipeline identifies individual samples from a directory of reads. The easiest way to explain is with an example. By default, the pipeline assumes that reads are named exactly as they are after coming off a MiSeq/iSeq, i.e. `*_L001_R1_001.fastq.gz` (forward) and `*_L001_R1_001.fastq.gz` (reverse). Consider the following:
+### Configuration file (optional)
 
-reads1 = `my_sample_S1_L001_R1_001.fastq.gz`
+If you prefer working with a YAML configuration file, create one based on `config.yaml` and point to it with `--config my_config.yaml`. CLI flags always take precedence over values defined in the file.
 
-reads2 = `my_sample_S1_L001_R1_001.fastq.gz`
+## Troubleshooting & tips
 
-parsed sample name: `my_sample` if `remove_sample_index` == True, else `my_sample_S1` if `remove_sample_index` == False.
-
-If you do not set the `suffix` parameters appropriately then no samples will be identified.
-
-#### Analysis Parameters:
-Various parameters for SNP calling and coverage thresholds. You will only occasionally need to edit these parameters.
-
-#### Reference and Database Files:
-Paths to reference and database files. You will normally not need to change these.
-
-
-
+- Ensure `suffix1`/`suffix2` match the read naming pattern; otherwise no samples will be detected.
+- Use `--dry` to preview the DAG, or `--dag dag.pdf` to visualise the full graph.
+- Add `--keep-resources` or `--keep-snakemake` if you need to inspect intermediate databases or Snakemake bookkeeping after a run.
+- For reproducible deployments (HPC, cloud), create a Snakemake profile and supply it with `--profile`.

@@ -13,3 +13,4 @@
 # Ignore macOS filesystem metadata
 *.DS_Store
 
+installation_and_running_instructions.sh
