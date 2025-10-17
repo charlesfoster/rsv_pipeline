@@ -3,6 +3,7 @@
 ###############################################################################
 import os, glob, re, sys
 from snakemake.io import glob_wildcards
+from snakemake.shell import shell
 
 configfile: "config.yaml"
 
@@ -74,7 +75,15 @@ def all_inputs(wildcards):
         os.path.join(OUTDIR, f".nextclade_{st}_ready.txt")
         for st in REFS.keys()
     ]
-    return [map_file] + flags + consensus + consensus_ambiguities + reports + others + csq_vcfs
+    targets = [map_file] + flags + consensus + consensus_ambiguities + reports + others + csq_vcfs
+    if WASTEWATER_MODE:
+        demix_outputs = [
+            os.path.join(OUTDIR, s, f"{s}.freyja_demix.txt")
+            for s in samples
+        ]
+        aggregate = os.path.join(FREYJA_AGG_DIR, "freyja_aggregate.tsv")
+        targets += demix_outputs + [aggregate]
+    return targets
 
 
 def get_mapped_samples():
@@ -100,6 +109,10 @@ SUFFIX2           = config["suffix2"]
 
 # file produced by the parser
 MAP = os.path.join(OUTDIR, "selected_sample_subtypes.tsv")
+WASTEWATER_MODE   = config.get("wastewater_mode", False)
+FREYJA_BASE       = os.path.join(OUTDIR, "freyja")
+FREYJA_AGG_DIR    = os.path.join(OUTDIR, "freyja_aggregated")
+FREYJA_AGG_INPUT_DIR = os.path.join(FREYJA_AGG_DIR, "inputs")
 
 ###############################################################################
 # DISCOVER SAMPLES
@@ -417,6 +430,7 @@ rule set_vcf_genotype:
         vcf_file=rules.add_fake_gt.output.gt,
     output:
         temp_vcf=temp(os.path.join(OUTDIR, "{sample}", "{sample}.temp.vcf.gz")),
+        temp_vcf_index=temp(os.path.join(OUTDIR, "{sample}", "{sample}.temp.vcf.gz.csi")),
         vcf_file=os.path.join(OUTDIR, "{sample}", "{sample}.final.vcf.gz"),
     log:
         os.path.join(OUTDIR, "{sample}", "{sample}.bcftools_setGT.log"),
@@ -437,6 +451,143 @@ rule set_vcf_genotype:
         bcftools +setGT -o {output.vcf_file} -- -t q -i 'GT="1/1" && INFO/AF >= {params.con_freq}' -n 'c:1/1' 2>> {log}
         bcftools index -f {output.vcf_file}
         """
+
+if WASTEWATER_MODE:
+
+    rule freyja_update:
+        output:
+            ready_rsva=os.path.join(FREYJA_BASE, ".freyja_RSVA_ready.txt"),
+            ready_rsvb=os.path.join(FREYJA_BASE, ".freyja_RSVB_ready.txt")
+        params:
+            base_dir=FREYJA_BASE
+        conda:
+            "envs/freyja_env.yaml"
+        shell:
+            """
+            mkdir -p "{params.base_dir}"
+            freyja update --pathogen RSVa
+            freyja update --pathogen RSVb
+            touch "{output.ready_rsva}" "{output.ready_rsvb}"
+            """
+
+    rule samtools_mpileup:
+        input:
+            ref_txt=rules.choose_ref.output.ref_txt,
+            bam=rules.indelqual.output.bam
+        output:
+            depths=os.path.join(OUTDIR, "{sample}", "{sample}.depths.tsv")
+        threads: 1
+        conda:
+            "envs/bwa_samtools_env.yaml"
+        shell:
+            """
+            REF=$(cat {input.ref_txt})
+            samtools mpileup -aa -A -d 600000 -Q 20 -q 0 -B -f "$REF" "{input.bam}" 2>/dev/null \
+            | cut -f1-4 > "{output.depths}"
+            """
+
+    rule freyja_demix:
+        input:
+            vcf=rules.set_vcf_genotype.output.vcf_file,
+            depths=rules.samtools_mpileup.output.depths,
+            map=MAP,
+            ready_a=rules.freyja_update.output.ready_rsva,
+            ready_b=rules.freyja_update.output.ready_rsvb
+        output:
+            demix=os.path.join(OUTDIR, "{sample}", "{sample}.freyja_demix.txt")
+        conda:
+            "envs/freyja_env.yaml"
+        run:
+            import gzip
+            import os
+            import shutil
+            import tempfile
+            from shlex import quote
+
+            subtype = None
+            with open(input.map) as fh:
+                for line in fh:
+                    s, st = line.rstrip().split("\t")
+                    if s == wildcards.sample:
+                        subtype = st
+                        break
+            if subtype is None:
+                raise ValueError(f"{wildcards.sample} not found in {input.map}")
+
+            pathogen_map = {"RSVA": "RSVa", "RSVB": "RSVb"}
+            try:
+                pathogen_flag = pathogen_map[subtype]
+            except KeyError as err:
+                raise ValueError(f"Unsupported subtype '{subtype}' for freyja demix") from err
+
+            os.makedirs(os.path.dirname(output.demix), exist_ok=True)
+            vcf_path = input.vcf
+            tmp_path = None
+
+            if str(vcf_path).endswith(".gz"):
+                tmp = tempfile.NamedTemporaryFile(
+                    delete=False,
+                    suffix=".vcf",
+                    dir=os.path.dirname(output.demix)
+                )
+                tmp_path = tmp.name
+                tmp.close()
+                with gzip.open(vcf_path, "rt") as src, open(tmp_path, "w") as dst:
+                    shutil.copyfileobj(src, dst)
+                vcf_path = tmp_path
+
+            try:
+                shell(
+                    "freyja demix {vcf} {depths} --output {out} --pathogen {pathogen}".format(
+                        vcf=quote(vcf_path),
+                        depths=quote(input.depths),
+                        out=quote(output.demix),
+                        pathogen=quote(pathogen_flag)
+                    )
+                )
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
+    rule freyja_aggregate:
+        input:
+            demix=lambda wc: [
+                os.path.join(OUTDIR, s, f"{s}.freyja_demix.txt")
+                for s in get_mapped_samples()
+            ]
+        output:
+            aggregated=os.path.join(FREYJA_AGG_DIR, "freyja_aggregate.tsv")
+        params:
+            indir=FREYJA_AGG_INPUT_DIR
+        conda:
+            "envs/freyja_env.yaml"
+        run:
+            import os
+            import shutil
+            from shlex import quote
+
+            os.makedirs(os.path.dirname(output.aggregated), exist_ok=True)
+            indir = params.indir
+            if os.path.isdir(indir):
+                for entry in os.listdir(indir):
+                    os.remove(os.path.join(indir, entry))
+            else:
+                os.makedirs(indir, exist_ok=True)
+
+            if not input.demix:
+                open(output.aggregated, "w").close()
+                return
+
+            for path in input.demix:
+                shutil.copy2(path, os.path.join(indir, os.path.basename(path)))
+
+            indir_with_sep = indir if indir.endswith(os.sep) else indir + os.sep
+            shell(
+                "freyja aggregate {indir} --output {out}".format(
+                    indir=quote(indir_with_sep),
+                    out=quote(output.aggregated)
+                )
+            )
 
 rule bcftools_csq:
     input:

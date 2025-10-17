@@ -11,6 +11,7 @@ suffix1: "_L001_R1_001.fastq.gz"
 suffix2: "_L001_R2_001.fastq.gz"
 remove_sample_index: True
 keep_trimmed_reads: False
+wastewater_mode: False
 
 #########
 # SOMETIMES NEEDS TO BE CHANGED
